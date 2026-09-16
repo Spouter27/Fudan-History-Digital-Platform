@@ -1,0 +1,17 @@
+{
+  "name": "fudan-history-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "setup": "node scripts/project.mjs setup",
+    "dev:backend": "node scripts/project.mjs backend",
+    "dev:frontend": "node scripts/project.mjs frontend",
+    "check": "node scripts/project.mjs check",
+    "share": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/share.ps1"
+  }
+}
+

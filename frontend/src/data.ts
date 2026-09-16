@@ -1,0 +1,43 @@
+import type { Catalog } from './model';
+
+// All records are fixtures, not historical assertions or authorized archive excerpts.
+export const demoCatalog: Catalog = {
+  sources: [
+    { id: 's1', title: '学校沿革资料登记样例', kind: '档案', citation: 'DEMO-A001 · 虚构登记号，无真实馆藏对应', excerpt: '此处演示档案摘录的呈现方式。正式入库时，请替换为经核实并允许展示的原文，保留页码、档号和删节标记。', authorization: '演示资料', demo: true },
+    { id: 's2', title: '校园刊物资料登记样例', kind: '报刊', citation: 'DEMO-P001 · 样例期刊，无真实刊物对应', excerpt: '此处用于演示报刊材料、编者概述与出处之间的关联，不引用任何真实报刊文字。', authorization: '演示资料', demo: true },
+    { id: 's3', title: '校园口述记忆登记样例', kind: '口述', citation: 'DEMO-O001 · 虚构访谈，未开展真实采访', excerpt: '此处用于演示口述材料的呈现。真实材料需记录访谈时间、讲述者意愿、授权范围与匿名要求。', authorization: '演示资料', demo: true },
+  ],
+  people: [
+    { id: 'p1', name: '江知远', role: '教育工作者', years: '演示人物 A', summary: '虚构人物，用于演示教育工作者与学校沿革事件的关联。', sourceIds: ['s1'], x: 320, y: 195, demo: true },
+    { id: 'p2', name: '林书衡', role: '学者', years: '演示人物 B', summary: '虚构人物，用于展示学术合作、课程建设与人物档案。', sourceIds: ['s1', 's2'], x: 490, y: 130, demo: true },
+    { id: 'p3', name: '陈见微', role: '学者', years: '演示人物 C', summary: '虚构人物，用于展示跨学科学习和合作关系。', sourceIds: ['s2'], x: 510, y: 320, demo: true },
+    { id: 'p4', name: '许闻溪', role: '学生', years: '演示人物 D', summary: '虚构人物，用于展示读书会、社团与学生日常记忆。', sourceIds: ['s3'], x: 300, y: 390, demo: true },
+    { id: 'p5', name: '周明岚', role: '学生', years: '演示人物 E', summary: '虚构人物，用于展示同窗与校园刊物的联系。', sourceIds: ['s3'], x: 155, y: 305, demo: true },
+    { id: 'p6', name: '叶怀文', role: '教育工作者', years: '演示人物 F', summary: '虚构人物，用于演示教学空间与教育活动的联系。', sourceIds: ['s1'], x: 125, y: 115, demo: true },
+    { id: 'p7', name: '陆清和', role: '学者', years: '演示人物 G', summary: '虚构人物，用于演示学术交流与资料整理工作。', sourceIds: ['s2'], x: 650, y: 225, demo: true },
+    { id: 'p8', name: '顾思源', role: '学生', years: '演示人物 H', summary: '虚构人物，用于演示学生参与公共记忆采集。', sourceIds: ['s3'], x: 630, y: 425, demo: true },
+  ],
+  events: [
+    [1905, '从一份求学记忆开始', '学校沿革', '从创校时期切入，理解一所大学的起点。', '早期校园', ['p1', 'p6'], 's1'],
+    [1917, '课堂与课程的变化', '学术教育', '透过课程材料，观察教育与学术的连接。', '教学空间', ['p2'], 's1'],
+    [1922, '校园空间的展开', '学校沿革', '把空间沿革与人物经历放在同一条时间线上。', '校园公共空间', ['p1', 'p6'], 's1'],
+    [1930, '纸页上的校园声音', '校园生活', '一份校园刊物，可以容纳许多不同的声音。', '学生编辑室', ['p4', 'p5'], 's2'],
+    [1937, '迁徙中的读书时光', '学校沿革', '通过资料关联，探索求学经历与时代的交汇。', '异地教学空间', ['p2', 'p3'], 's1'],
+    [1946, '归来与重新出发', '学校沿革', '把一段经历的结束与下一段生活的开始连接起来。', '校园', ['p1', 'p4'], 's1'],
+    [1952, '学科之间的对话', '学术教育', '从课程和研究材料中寻找学科交汇的线索。', '教学楼', ['p2', 'p3', 'p7'], 's2'],
+    [1978, '重新打开的笔记本', '学术教育', '一份学习笔记，如何成为可以追溯的记忆。', '图书馆', ['p3', 'p5'], 's3'],
+    [1985, '读书会的一个下午', '校园生活', '把讨论、阅读和相遇留在校园记忆中。', '阅览空间', ['p4', 'p5'], 's3'],
+    [2000, '跨越学科的相遇', '学术教育', '以人物关联展示不同学习路径之间的交集。', '校园交流空间', ['p3', 'p7'], 's2'],
+    [2005, '共同写下的校园记忆', '校园生活', '连接个人讲述与更长的学校历史。', '校园公共空间', ['p4', 'p8'], 's3'],
+    [2026, '让记忆成为新的起点', '校园生活', '邀请每一位记录者，为公共记忆补充一条线索。', '线上共创空间', ['p7', 'p8'], 's3'],
+  ].map((row, i) => ({ id: `e${i + 1}`, year: row[0] as number, title: row[1] as string,
+    category: row[2] as Catalog['events'][number]['category'], summary: row[3] as string,
+    place: row[4] as string, personIds: row[5] as string[], sourceIds: [row[6] as string], demo: true,
+    content: '本条为界面与交互演示文案，年份仅用于时间定位测试，不表示该事件在复旦真实发生。正式内容应由内容组依据史料考证，分别填写事件概述、可公开摘录和出处；遇到不同说法时保留分歧，不把推测写成定论。' })),
+  relations: [
+    ['p1', 'p2', '师生'], ['p1', 'p6', '学术合作'], ['p2', 'p3', '学术合作'],
+    ['p2', 'p4', '师生'], ['p3', 'p7', '学术合作'], ['p4', 'p5', '同窗'],
+    ['p4', 'p8', '社团协作'], ['p6', 'p5', '师生'], ['p7', 'p8', '师生'],
+    ['p1', 'p3', '学术合作'], ['p5', 'p8', '社团协作'],
+  ].map(([from, to, type], i) => ({ id: `r${i + 1}`, from, to, type: type as Catalog['relations'][number]['type'], sourceIds: ['s1'], demo: true })),
+};
