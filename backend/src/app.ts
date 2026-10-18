@@ -51,6 +51,52 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
   app.use(express.json({ limit: '24kb' }));
   app.get('/api/health', (_req,res) => ok(res,{ status:'ok', database:'sqlite', auth:'local-password', llmConfigured:false }));
   app.get('/api/catalog', (_req,res) => ok(res,store.catalog()));
+  app.get('/api/timeline', (req, res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '20'), 10) || 20));
+    const catalog = store.catalog();
+    let items = catalog.events;
+    const start = req.query.start ? parseInt(String(req.query.start), 10) : null;
+    const end = req.query.end ? parseInt(String(req.query.end), 10) : null;
+    const category = String(req.query.category ?? '');
+    const keyword = String(req.query.keyword ?? '');
+    if (start !== null && !Number.isNaN(start)) items = items.filter(e => e.year >= start);
+    if (end !== null && !Number.isNaN(end)) items = items.filter(e => e.year <= end);
+    if (category) items = items.filter(e => e.category === category);
+    if (keyword) {
+      const k = keyword.toLowerCase();
+      items = items.filter(e => (e.title + e.summary).toLowerCase().includes(k));
+    }
+    items = [...items].sort((a, b) => a.year - b.year);
+    const total = items.length;
+    const pageItems = items.slice((page - 1) * pageSize, page * pageSize);
+    ok(res, { total, page, pageSize, items: pageItems });
+  });
+
+  app.get('/api/timeline/:id', (req, res) => {
+    const event = store.catalog().events.find(e => e.id === req.params.id);
+    if (!event) throw new HttpError(404, '事件不存在。');
+    ok(res, event);
+  });
+
+  app.get('/api/relations/graph', (_req, res) => {
+    const catalog = store.catalog();
+    const nodes = catalog.people.map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.role,
+      colorKey: p.role,
+    }));
+    const links = catalog.relations.map(r => ({
+      id: r.id,
+      source: r.from,
+      target: r.to,
+      type: r.type,
+      styleKey: r.type,
+      sourceRef: (r.sourceIds ?? []).join(','),
+    }));
+    ok(res, { nodes, links });
+  });
   app.get('/api/search', (req,res) => {
     const q=z.string().trim().max(100).parse(req.query.q || '');
     ok(res,searchCatalog(store.catalog(),q));
