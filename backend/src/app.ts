@@ -136,11 +136,28 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     ok(res, { ...person, relatedEvents, relations });
   });
 
-app.get('/api/search', (req,res) => {
+  app.get('/api/search', (req,res) => {
     const q=z.string().trim().max(100).parse(req.query.q || '');
-    ok(res,searchCatalog(store.catalog(),q));
-  });
-  app.post('/api/auth/login', (req,res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '10'), 10) || 10));
+    const type = String(req.query.type ?? '').trim();
+    let results = searchCatalog(store.catalog(), q);
+    if (type && type !== 'all') results = results.filter(r => r.type === type);
+    const total = results.length;
+    const pageItems = results.slice((page - 1) * pageSize, page * pageSize).map(r => {
+      const idx = q ? r.title.toLowerCase().indexOf(q.toLowerCase()) : -1;
+      const highlight = idx >= 0
+        ? r.title.slice(0, idx) + '<em>' + r.title.slice(idx, idx + q.length) + '</em>' + r.title.slice(idx + q.length)
+        : r.title;
+      return {
+        ...r,
+        highlight,
+        jumpType: r.type === 'person' ? 'person' : r.type === 'event' ? 'timeline' : 'source',
+        jumpId: r.id,
+      };
+    });
+    ok(res, { total, page, pageSize, items: pageItems });
+  });  app.post('/api/auth/login', (req,res) => {
     limit(loginAttempts, req.ip || 'local', options.loginLimit ?? 10);
     const input=loginSchema.parse(req.body);
     const user=store.db.prepare('SELECT * FROM users WHERE email=?').get(input.email) as UserRow | undefined;
