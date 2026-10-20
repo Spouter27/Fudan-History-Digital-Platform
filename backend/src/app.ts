@@ -97,7 +97,46 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     }));
     ok(res, { nodes, links });
   });
-  app.get('/api/search', (req,res) => {
+    app.get('/api/persons', (req, res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '20'), 10) || 20));
+    const keyword = String(req.query.keyword ?? '').toLowerCase();
+    const role = String(req.query.role ?? '');
+
+    let items = store.catalog().people;
+    if (role) items = items.filter(p => p.role === role);
+    if (keyword) items = items.filter(p => (p.name + p.summary).toLowerCase().includes(keyword));
+    items = [...items].sort((a, b) => a.id.localeCompare(b.id));
+
+    const total = items.length;
+    const pageItems = items.slice((page - 1) * pageSize, page * pageSize);
+    ok(res, { total, page, pageSize, items: pageItems });
+  });
+
+  app.get('/api/persons/:id', (req, res) => {
+    const catalog = store.catalog();
+    const person = catalog.people.find(p => p.id === req.params.id);
+    if (!person) throw new HttpError(404, '人物不存在。');
+
+    const relatedEvents = catalog.events
+      .filter(e => e.personIds.includes(person.id))
+      .map(e => ({ id: e.id, year: e.year, title: e.title, category: e.category }));
+
+    const relations = catalog.relations
+      .filter(r => r.from === person.id || r.to === person.id)
+      .map(r => ({
+        id: r.id,
+        type: r.type,
+        from: r.from,
+        to: r.to,
+        otherId: r.from === person.id ? r.to : r.from,
+        sourceRef: (r.sourceIds ?? []).join(','),
+      }));
+
+    ok(res, { ...person, relatedEvents, relations });
+  });
+
+app.get('/api/search', (req,res) => {
     const q=z.string().trim().max(100).parse(req.query.q || '');
     ok(res,searchCatalog(store.catalog(),q));
   });
