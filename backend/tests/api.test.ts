@@ -96,3 +96,63 @@ test('cross-origin writes, missing request marker, invalid input and login abuse
   assert.equal((await f.req('/submissions?scope=invalid','GET',undefined,a)).status,422);
  }finally{await f.close();}
 });
+
+test('C组只读展示API：timeline/persons/graph/search', async () => {
+  const f = await fixtureServer();
+  try {
+    const tl = await f.req('/timeline?page=1&pageSize=5');
+    assert.equal(tl.status, 200);
+    assert.equal(tl.data.code, 0);
+    assert.equal(tl.data.data.page, 1);
+    assert.equal(tl.data.data.pageSize, 5);
+    assert.ok(Array.isArray(tl.data.data.items));
+    assert.ok(tl.data.data.items.length <= 5);
+
+    const firstId = tl.data.data.items[0]?.id;
+    if (firstId) {
+      const detail = await f.req('/timeline/' + firstId);
+      assert.equal(detail.status, 200);
+      assert.equal(detail.data.data.id, firstId);
+    }
+    assert.equal((await f.req('/timeline/not-exist')).status, 404);
+
+    const pl = await f.req('/persons?page=1&pageSize=5');
+    assert.equal(pl.status, 200);
+    assert.ok(Array.isArray(pl.data.data.items));
+    const role = pl.data.data.items[0]?.role;
+    if (role) {
+      const filtered = await f.req('/persons?role=' + encodeURIComponent(role));
+      assert.ok(filtered.data.data.items.every((p: any) => p.role === role));
+    }
+
+    const pid = pl.data.data.items[0]?.id;
+    if (pid) {
+      const pd = await f.req('/persons/' + pid);
+      assert.equal(pd.status, 200);
+      assert.ok(Array.isArray(pd.data.data.relatedEvents));
+      assert.ok(Array.isArray(pd.data.data.relations));
+    }
+    assert.equal((await f.req('/persons/not-exist')).status, 404);
+
+    const graph = await f.req('/relations/graph');
+    assert.equal(graph.status, 200);
+    assert.ok(Array.isArray(graph.data.data.nodes));
+    assert.ok(Array.isArray(graph.data.data.links));
+
+    const s = await f.req('/search?q=' + encodeURIComponent('校园') + '&page=1&pageSize=3');
+    assert.equal(s.status, 200);
+    assert.equal(s.data.data.page, 1);
+    assert.equal(s.data.data.pageSize, 3);
+    assert.ok(Array.isArray(s.data.data.items));
+    for (const item of s.data.data.items) {
+      assert.ok('highlight' in item);
+      assert.ok('jumpType' in item);
+      assert.ok('jumpId' in item);
+    }
+
+    const onlyPerson = await f.req('/search?q=' + encodeURIComponent('校园') + '&type=person');
+    assert.ok(onlyPerson.data.data.items.every((r: any) => r.type === 'person'));
+  } finally {
+    await f.close();
+  }
+});
