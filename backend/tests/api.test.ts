@@ -156,3 +156,36 @@ test('C组只读展示API：timeline/persons/graph/search', async () => {
     await f.close();
   }
 });
+
+test('C组关系图中心子图与搜索摘要高亮', async () => {
+  const f = await fixtureServer();
+  try {
+    const full = await f.req('/relations/graph');
+    assert.equal(full.status, 200);
+    const fullNodes = full.data.data.nodes.length;
+    const fullLinks = full.data.data.links.length;
+    assert.ok(fullNodes > 0);
+    assert.ok(fullLinks > 0);
+
+    const d1 = await f.req('/relations/graph?centerId=p1&depth=1');
+    assert.equal(d1.status, 200);
+    const d1Ids = d1.data.data.nodes.map((n: any) => n.id);
+    assert.ok(d1Ids.includes('p1'));
+    assert.ok(d1.data.data.nodes.length < fullNodes);
+
+    const d2 = await f.req('/relations/graph?centerId=p1&depth=2');
+    assert.equal(d2.status, 200);
+    assert.ok(d2.data.data.nodes.length >= d1.data.data.nodes.length);
+    assert.ok(d2.data.data.nodes.length <= fullNodes);
+
+    const missing = await f.req('/relations/graph?centerId=not-exist');
+    assert.equal(missing.status, 404);
+
+    const s = await f.req('/search?q=' + encodeURIComponent('校园') + '&page=1&pageSize=3');
+    assert.equal(s.status, 200);
+    const hits = s.data.data.items.filter((it: any) => String(it.highlight).includes('<em>校园</em>'));
+    assert.ok(hits.length > 0, '至少一条结果的 highlight 应包含 <em>校园</em>');
+  } finally {
+    await f.close();
+  }
+});
