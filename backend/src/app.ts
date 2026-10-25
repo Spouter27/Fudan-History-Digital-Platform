@@ -79,15 +79,42 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     ok(res, event);
   });
 
-  app.get('/api/relations/graph', (_req, res) => {
+  app.get('/api/relations/graph', (req, res) => {
     const catalog = store.catalog();
-    const nodes = catalog.people.map(p => ({
+    const centerId = String(req.query.centerId ?? '').trim();
+    const depthRaw = req.query.depth ? parseInt(String(req.query.depth), 10) : null;
+    const depth = depthRaw !== null && !Number.isNaN(depthRaw) ? Math.max(1, Math.min(5, depthRaw)) : null;
+
+    let people = catalog.people;
+    let relations = catalog.relations;
+
+    if (centerId) {
+      const center = catalog.people.find(p => p.id === centerId);
+      if (!center) throw new HttpError(404, '人物不存在。');
+      const maxDepth = depth ?? 1;
+      const visited = new Set<string>([centerId]);
+      let frontier = new Set<string>([centerId]);
+      for (let d = 0; d < maxDepth; d++) {
+        const next = new Set<string>();
+        for (const r of catalog.relations) {
+          if (frontier.has(r.from) && !visited.has(r.to)) next.add(r.to);
+          if (frontier.has(r.to) && !visited.has(r.from)) next.add(r.from);
+        }
+        for (const id of next) visited.add(id);
+        frontier = next;
+        if (next.size === 0) break;
+      }
+      people = catalog.people.filter(p => visited.has(p.id));
+      relations = catalog.relations.filter(r => visited.has(r.from) && visited.has(r.to));
+    }
+
+    const nodes = people.map(p => ({
       id: p.id,
       name: p.name,
       category: p.role,
       colorKey: p.role,
     }));
-    const links = catalog.relations.map(r => ({
+    const links = relations.map(r => ({
       id: r.id,
       source: r.from,
       target: r.to,
