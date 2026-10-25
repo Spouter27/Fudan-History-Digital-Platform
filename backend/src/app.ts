@@ -171,11 +171,20 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     let results = searchCatalog(store.catalog(), q);
     if (type && type !== 'all') results = results.filter(r => r.type === type);
     const total = results.length;
+    const qLower = q ? q.toLowerCase() : '';
     const pageItems = results.slice((page - 1) * pageSize, page * pageSize).map(r => {
-      const idx = q ? r.title.toLowerCase().indexOf(q.toLowerCase()) : -1;
-      const highlight = idx >= 0
-        ? r.title.slice(0, idx) + '<em>' + r.title.slice(idx, idx + q.length) + '</em>' + r.title.slice(idx + q.length)
-        : r.title;
+      let highlight = r.title;
+      if (qLower) {
+        const ti = r.title.toLowerCase().indexOf(qLower);
+        if (ti >= 0) {
+          highlight = r.title.slice(0, ti) + '<em>' + r.title.slice(ti, ti + q.length) + '</em>' + r.title.slice(ti + q.length);
+        } else {
+          const si = r.summary.toLowerCase().indexOf(qLower);
+          if (si >= 0) {
+            highlight = r.summary.slice(0, si) + '<em>' + r.summary.slice(si, si + q.length) + '</em>' + r.summary.slice(si + q.length);
+          }
+        }
+      }
       return {
         ...r,
         highlight,
@@ -184,7 +193,9 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
       };
     });
     ok(res, { total, page, pageSize, items: pageItems });
-  });  app.post('/api/auth/login', (req,res) => {
+  });
+
+  app.post('/api/auth/login', (req,res) => {
     limit(loginAttempts, req.ip || 'local', options.loginLimit ?? 10);
     const input=loginSchema.parse(req.body);
     const user=store.db.prepare('SELECT * FROM users WHERE email=?').get(input.email) as UserRow | undefined;
