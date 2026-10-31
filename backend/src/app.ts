@@ -49,12 +49,12 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     next();
   });
   app.use(express.json({ limit: '24kb' }));
-  app.get('/api/health', (_req,res) => ok(res,{ status:'ok', database:'sqlite', auth:'local-password', llmConfigured:false }));
-  app.get('/api/catalog', (_req,res) => ok(res,store.catalog()));
-  app.get('/api/timeline', (req, res) => {
+  app.get('/api/health', async (_req, res) => ok(res,{ status:'ok', database:'sqlite', auth:'local-password', llmConfigured:false }));
+  app.get('/api/catalog', async (_req, res) => ok(res,await store.catalog()));
+  app.get('/api/timeline', async (req, res) => {
     const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '20'), 10) || 20));
-    const catalog = store.catalog();
+    const catalog = await store.catalog();
     let items = catalog.events;
     const start = req.query.start ? parseInt(String(req.query.start), 10) : null;
     const end = req.query.end ? parseInt(String(req.query.end), 10) : null;
@@ -73,21 +73,48 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     ok(res, { total, page, pageSize, items: pageItems });
   });
 
-  app.get('/api/timeline/:id', (req, res) => {
-    const event = store.catalog().events.find(e => e.id === req.params.id);
+  app.get('/api/timeline/:id', async (req, res) => {
+    const event = (await store.catalog()).events.find(e => e.id === req.params.id);
     if (!event) throw new HttpError(404, '事件不存在。');
     ok(res, event);
   });
 
-  app.get('/api/relations/graph', (_req, res) => {
-    const catalog = store.catalog();
-    const nodes = catalog.people.map(p => ({
+  app.get('/api/relations/graph', async (req, res) => {
+    const catalog = await store.catalog();
+    const centerId = String(req.query.centerId ?? '').trim();
+    const depthRaw = req.query.depth ? parseInt(String(req.query.depth), 10) : null;
+    const depth = depthRaw !== null && !Number.isNaN(depthRaw) ? Math.max(1, Math.min(5, depthRaw)) : null;
+
+    let people = catalog.people;
+    let relations = catalog.relations;
+
+    if (centerId) {
+      const center = catalog.people.find(p => p.id === centerId);
+      if (!center) throw new HttpError(404, '人物不存在。');
+      const maxDepth = depth ?? 1;
+      const visited = new Set<string>([centerId]);
+      let frontier = new Set<string>([centerId]);
+      for (let d = 0; d < maxDepth; d++) {
+        const next = new Set<string>();
+        for (const r of catalog.relations) {
+          if (frontier.has(r.from) && !visited.has(r.to)) next.add(r.to);
+          if (frontier.has(r.to) && !visited.has(r.from)) next.add(r.from);
+        }
+        for (const id of next) visited.add(id);
+        frontier = next;
+        if (next.size === 0) break;
+      }
+      people = catalog.people.filter(p => visited.has(p.id));
+      relations = catalog.relations.filter(r => visited.has(r.from) && visited.has(r.to));
+    }
+
+    const nodes = people.map(p => ({
       id: p.id,
       name: p.name,
       category: p.role,
       colorKey: p.role,
     }));
-    const links = catalog.relations.map(r => ({
+    const links = relations.map(r => ({
       id: r.id,
       source: r.from,
       target: r.to,
@@ -97,11 +124,78 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     }));
     ok(res, { nodes, links });
   });
-  app.get('/api/search', (req,res) => {
-    const q=z.string().trim().max(100).parse(req.query.q || '');
-    ok(res,searchCatalog(store.catalog(),q));
+    app.get('/api/persons', async (req, res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '20'), 10) || 20));
+    const keyword = String(req.query.keyword ?? '').toLowerCase();
+    const role = String(req.query.role ?? '');
+
+    let items = (await store.catalog()).people;
+    if (role) items = items.filter(p => p.role === role);
+    if (keyword) items = items.filter(p => (p.name + p.summary).toLowerCase().includes(keyword));
+    items = [...items].sort((a, b) => a.id.localeCompare(b.id));
+
+    const total = items.length;
+    const pageItems = items.slice((page - 1) * pageSize, page * pageSize);
+    ok(res, { total, page, pageSize, items: pageItems });
   });
-  app.post('/api/auth/login', (req,res) => {
+
+  app.get('/api/persons/:id', async (req, res) => {
+    const catalog = await store.catalog();
+    const person = catalog.people.find(p => p.id === req.params.id);
+    if (!person) throw new HttpError(404, '人物不存在。');
+
+    const relatedEvents = catalog.events
+      .filter(e => e.personIds.includes(person.id))
+      .map(e => ({ id: e.id, year: e.year, title: e.title, category: e.category }));
+
+    const relations = catalog.relations
+      .filter(r => r.from === person.id || r.to === person.id)
+      .map(r => ({
+        id: r.id,
+        type: r.type,
+        from: r.from,
+        to: r.to,
+        otherId: r.from === person.id ? r.to : r.from,
+        sourceRef: (r.sourceIds ?? []).join(','),
+      }));
+
+    ok(res, { ...person, relatedEvents, relations });
+  });
+
+  app.get('/api/search', async (req, res) => {
+    const q=z.string().trim().max(100).parse(req.query.q || '');
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '10'), 10) || 10));
+    const type = String(req.query.type ?? '').trim();
+    let results = searchCatalog(await store.catalog(), q);
+    if (type && type !== 'all') results = results.filter(r => r.type === type);
+    const total = results.length;
+    const qLower = q ? q.toLowerCase() : '';
+    const pageItems = results.slice((page - 1) * pageSize, page * pageSize).map(r => {
+      let highlight = r.title;
+      if (qLower) {
+        const ti = r.title.toLowerCase().indexOf(qLower);
+        if (ti >= 0) {
+          highlight = r.title.slice(0, ti) + '<em>' + r.title.slice(ti, ti + q.length) + '</em>' + r.title.slice(ti + q.length);
+        } else {
+          const si = r.summary.toLowerCase().indexOf(qLower);
+          if (si >= 0) {
+            highlight = r.summary.slice(0, si) + '<em>' + r.summary.slice(si, si + q.length) + '</em>' + r.summary.slice(si + q.length);
+          }
+        }
+      }
+      return {
+        ...r,
+        highlight,
+        jumpType: r.type === 'person' ? 'person' : r.type === 'event' ? 'timeline' : 'source',
+        jumpId: r.id,
+      };
+    });
+    ok(res, { total, page, pageSize, items: pageItems });
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
     limit(loginAttempts, req.ip || 'local', options.loginLimit ?? 10);
     const input=loginSchema.parse(req.body);
     const user=store.db.prepare('SELECT * FROM users WHERE email=?').get(input.email) as UserRow | undefined;
@@ -115,13 +209,13 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     res.cookie(cookieName,token,{httpOnly:true,sameSite:'strict',secure:false,path:'/api',maxAge:8*60*60*1000});
     ok(res,publicUser(user));
   });
-  app.get('/api/auth/me',(req,res) => ok(res,publicUser(who(req,store))));
-  app.post('/api/auth/logout',(req,res) => {
+  app.get('/api/auth/me',async (req, res) => ok(res,publicUser(who(req,store))));
+  app.post('/api/auth/logout',async (req, res) => {
     const token=sessionCookie(req); if (token) store.db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));
     res.clearCookie(cookieName,{httpOnly:true,sameSite:'strict',secure:false,path:'/api'});
     ok(res,null);
   });
-  app.get('/api/submissions',(req,res) => {
+  app.get('/api/submissions',async (req, res) => {
     const scope=z.enum(['mine','review','public']).parse(req.query.scope || 'mine');
     if (scope==='public') {
       const rows=store.db.prepare('SELECT * FROM submissions WHERE status=? ORDER BY created_at DESC,id DESC').all('approved') as SubmissionRow[];
@@ -132,13 +226,13 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     const rows=(scope==='mine' ? store.db.prepare('SELECT * FROM submissions WHERE owner_id=? ORDER BY created_at DESC,id DESC').all(user.id) : store.db.prepare('SELECT * FROM submissions ORDER BY created_at DESC,id DESC').all()) as SubmissionRow[];
     ok(res,rows.map(row=>serializeSubmission(row)));
   });
-  app.post('/api/submissions',(req,res) => {
+  app.post('/api/submissions',async (req, res) => {
     const user=who(req,store); const input=submissionInputSchema.parse(req.body);
     const id=randomUUID(), now=new Date().toISOString();
     store.db.prepare('INSERT INTO submissions VALUES (?,?,?,?,?,?,1,?,?,?,?)').run(id,user.id,input.title,input.year,input.body,input.author,'pending',now,now,'');
     ok(res,serializeSubmission(store.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow));
   });
-  app.post('/api/submissions/:id/:action',(req,res) => {
+  app.post('/api/submissions/:id/:action',async (req, res) => {
     const user=who(req,store);
     const action=z.enum(['approve','reject','withdraw']).parse(req.params.action);
     const {note}=z.object({note:z.string().trim().max(500).default('')}).parse(req.body);
@@ -165,9 +259,9 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
       store.db.prepare('DELETE FROM submissions WHERE id=? AND owner_id=?').run(item.id,user.id);
     }); ok(res,null);
   });
-  app.post('/api/qa/retrieve',(req,res)=>{
+  app.post('/api/qa/retrieve',async (req, res) =>{
     const {question}=z.object({question:z.string().trim().min(2).max(200)}).parse(req.body);
-    const catalog=store.catalog();
+    const catalog=await store.catalog();
     const matches=searchCatalog(catalog,question).slice(0,8);
     const sourceIds=new Set<string>();
     for(const match of matches) {

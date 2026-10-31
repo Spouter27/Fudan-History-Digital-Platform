@@ -1,3 +1,5 @@
+﻿process.env.DB_DRIVER = 'sqlite';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -96,3 +98,97 @@ test('cross-origin writes, missing request marker, invalid input and login abuse
   assert.equal((await f.req('/submissions?scope=invalid','GET',undefined,a)).status,422);
  }finally{await f.close();}
 });
+
+test('C组只读展示API：timeline/persons/graph/search', async () => {
+  const f = await fixtureServer();
+  try {
+    const tl = await f.req('/timeline?page=1&pageSize=5');
+    assert.equal(tl.status, 200);
+    assert.equal(tl.data.code, 0);
+    assert.equal(tl.data.data.page, 1);
+    assert.equal(tl.data.data.pageSize, 5);
+    assert.ok(Array.isArray(tl.data.data.items));
+    assert.ok(tl.data.data.items.length <= 5);
+
+    const firstId = tl.data.data.items[0]?.id;
+    if (firstId) {
+      const detail = await f.req('/timeline/' + firstId);
+      assert.equal(detail.status, 200);
+      assert.equal(detail.data.data.id, firstId);
+    }
+    assert.equal((await f.req('/timeline/not-exist')).status, 404);
+
+    const pl = await f.req('/persons?page=1&pageSize=5');
+    assert.equal(pl.status, 200);
+    assert.ok(Array.isArray(pl.data.data.items));
+    const role = pl.data.data.items[0]?.role;
+    if (role) {
+      const filtered = await f.req('/persons?role=' + encodeURIComponent(role));
+      assert.ok(filtered.data.data.items.every((p: any) => p.role === role));
+    }
+
+    const pid = pl.data.data.items[0]?.id;
+    if (pid) {
+      const pd = await f.req('/persons/' + pid);
+      assert.equal(pd.status, 200);
+      assert.ok(Array.isArray(pd.data.data.relatedEvents));
+      assert.ok(Array.isArray(pd.data.data.relations));
+    }
+    assert.equal((await f.req('/persons/not-exist')).status, 404);
+
+    const graph = await f.req('/relations/graph');
+    assert.equal(graph.status, 200);
+    assert.ok(Array.isArray(graph.data.data.nodes));
+    assert.ok(Array.isArray(graph.data.data.links));
+
+    const s = await f.req('/search?q=' + encodeURIComponent('校园') + '&page=1&pageSize=3');
+    assert.equal(s.status, 200);
+    assert.equal(s.data.data.page, 1);
+    assert.equal(s.data.data.pageSize, 3);
+    assert.ok(Array.isArray(s.data.data.items));
+    for (const item of s.data.data.items) {
+      assert.ok('highlight' in item);
+      assert.ok('jumpType' in item);
+      assert.ok('jumpId' in item);
+    }
+
+    const onlyPerson = await f.req('/search?q=' + encodeURIComponent('校园') + '&type=person');
+    assert.ok(onlyPerson.data.data.items.every((r: any) => r.type === 'person'));
+  } finally {
+    await f.close();
+  }
+});
+
+test('C组关系图中心子图与搜索摘要高亮', async () => {
+  const f = await fixtureServer();
+  try {
+    const full = await f.req('/relations/graph');
+    assert.equal(full.status, 200);
+    const fullNodes = full.data.data.nodes.length;
+    const fullLinks = full.data.data.links.length;
+    assert.ok(fullNodes > 0);
+    assert.ok(fullLinks > 0);
+
+    const d1 = await f.req('/relations/graph?centerId=p1&depth=1');
+    assert.equal(d1.status, 200);
+    const d1Ids = d1.data.data.nodes.map((n: any) => n.id);
+    assert.ok(d1Ids.includes('p1'));
+    assert.ok(d1.data.data.nodes.length < fullNodes);
+
+    const d2 = await f.req('/relations/graph?centerId=p1&depth=2');
+    assert.equal(d2.status, 200);
+    assert.ok(d2.data.data.nodes.length >= d1.data.data.nodes.length);
+    assert.ok(d2.data.data.nodes.length <= fullNodes);
+
+    const missing = await f.req('/relations/graph?centerId=not-exist');
+    assert.equal(missing.status, 404);
+
+    const s = await f.req('/search?q=' + encodeURIComponent('校园') + '&page=1&pageSize=3');
+    assert.equal(s.status, 200);
+    const hits = s.data.data.items.filter((it: any) => String(it.highlight).includes('<em>校园</em>'));
+    assert.ok(hits.length > 0, '至少一条结果的 highlight 应包含 <em>校园</em>');
+  } finally {
+    await f.close();
+  }
+});
+
