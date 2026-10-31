@@ -1,3 +1,5 @@
+﻿process.env.DB_DRIVER = 'sqlite';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -189,3 +191,4 @@ test('C组关系图中心子图与搜索摘要高亮', async () => {
     await f.close();
   }
 });
+

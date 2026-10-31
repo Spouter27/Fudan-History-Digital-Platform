@@ -53,7 +53,29 @@ export class Store {
         this.db.prepare('INSERT INTO users VALUES (?,?,?,?,?)').run(randomUUID(), user.email.toLowerCase(), user.name, user.role, hashPassword(user.password));
     });
   }
-  catalog(): Catalog {
+  async catalogFromPg(): Promise<Catalog> {
+    const result: Catalog = { events: [], people: [], relations: [], sources: [] };
+    const rows = await pgPool.query('SELECT kind,payload FROM catalog_items WHERE published=1 ORDER BY kind, id');
+    for (const row of rows.rows) {
+      const kind = row.kind as keyof Catalog;
+      if (kind in result) (result[kind] as unknown[]).push(JSON.parse(row.payload as string));
+    }
+    result.sources = result.sources.filter(s => ['演示资料','已授权','可依法引用'].includes(s.authorization));
+    const sourceIds = new Set(result.sources.map(s => s.id));
+    const allowed = (item: { sourceIds: string[] }) => item.sourceIds.length > 0 && item.sourceIds.every(id => sourceIds.has(id));
+    result.people = result.people.filter(allowed);
+    const peopleIds = new Set(result.people.map(p => p.id));
+    result.events = result.events.filter(allowed).map(e => ({ ...e, personIds: e.personIds.filter(id => peopleIds.has(id)) }));
+    result.relations = result.relations.filter(r => allowed(r) && peopleIds.has(r.from) && peopleIds.has(r.to));
+    return result;
+  }
+
+  async catalog(): Promise<Catalog> {
+    if (process.env.DB_DRIVER === 'sqlite') return this.catalogFromSqlite();
+    return this.catalogFromPg();
+  }
+
+  catalogFromSqlite(): Catalog {
     const result: Catalog = { events: [], people: [], relations: [], sources: [] };
     for (const row of this.db.prepare('SELECT kind,payload FROM catalog_items WHERE published=1 ORDER BY rowid').all()) {
       const kind = row.kind as keyof Catalog;
@@ -80,3 +102,13 @@ export function serializeSubmission(row: SubmissionRow, isPublic = false) {
     consent: row.consent === 1, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at,
     reviewNote: isPublic ? '' : row.review_note };
 }
+
+import pg from 'pg';
+
+export const pgPool = new pg.Pool({
+  database: 'fudan_history',
+  user: 'postgres',
+  password: process.env.PGPASSWORD,
+  host: '127.0.0.1',
+  port: 5432,
+});
