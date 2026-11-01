@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { submissionInputSchema, searchCatalog } from './model.ts';
-import { Store, hashToken, publicUser, serializeSubmission, verifyPassword, hashPassword, type UserRow, type SubmissionRow } from './db.ts';
+import { Store, StoreError, hashToken, publicUser, serializeSubmission, verifyPassword, hashPassword, type UserRow, type SubmissionRow } from './db.ts';
 
 class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 const cookieName = 'fudan_session';
@@ -238,26 +238,15 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     const {note}=z.object({note:z.string().trim().max(500).default('')}).parse(req.body);
     if(action!=='withdraw' && user.role!=='reviewer') throw new HttpError(403,'只有审核员可以审核投稿。');
     if(action==='reject' && !note) throw new HttpError(422,'退回时必须填写原因。');
-    store.transaction(()=>{
-      const item=store.db.prepare('SELECT * FROM submissions WHERE id=?').get(String(req.params.id)) as SubmissionRow | undefined;
-      if(!item || (action==='withdraw' && item.owner_id!==user.id)) throw new HttpError(404,'记录不存在。');
-      if(action==='withdraw' ? item.status==='withdrawn' : item.status!=='pending') throw new HttpError(409,'记录状态已改变，请刷新。');
-      const status=action==='approve'?'approved':action==='reject'?'rejected':'withdrawn', now=new Date().toISOString();
-      const changed=store.db.prepare('UPDATE submissions SET status=?,review_note=?,updated_at=? WHERE id=? AND status=?').run(status,action==='withdraw'?item.review_note:note,now,item.id,item.status);
-      if(!changed.changes) throw new HttpError(409,'记录状态已改变，请刷新。');
-      store.db.prepare('INSERT INTO review_logs VALUES (?,?,?,?,?,?)').run(randomUUID(),item.id,user.id,action,action==='withdraw'?'':note,now);
-    }); ok(res,null);
+    try { await store.reviewSubmission(String(req.params.id), action, note, user.id); }
+    catch (e) { if (e instanceof StoreError) throw new HttpError(e.status, e.message); throw e; }
+    ok(res,null);
   });
   app.delete('/api/submissions/:id', async (req,res)=>{
     const user=await who(req, store);
-    store.transaction(()=>{
-      const item=store.db.prepare('SELECT * FROM submissions WHERE id=? AND owner_id=?').get(String(req.params.id),user.id) as SubmissionRow | undefined;
-      if(!item) throw new HttpError(404,'记录不存在。');
-      // Scrub potentially identifying notes and actor links; retain only action/time summaries.
-      store.db.prepare('UPDATE review_logs SET submission_id=NULL,actor_id=NULL,note=? WHERE submission_id=?').run('',item.id);
-      store.db.prepare('INSERT INTO review_logs VALUES (?,NULL,NULL,?,?,?)').run(randomUUID(),'delete','',new Date().toISOString());
-      store.db.prepare('DELETE FROM submissions WHERE id=? AND owner_id=?').run(item.id,user.id);
-    }); ok(res,null);
+    try { await store.deleteSubmission(String(req.params.id), user.id); }
+    catch (e) { if (e instanceof StoreError) throw new HttpError(e.status, e.message); throw e; }
+    ok(res,null);
   });
   app.post('/api/qa/retrieve',async (req, res) =>{
     const {question}=z.object({question:z.string().trim().min(2).max(200)}).parse(req.body);

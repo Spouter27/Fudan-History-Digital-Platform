@@ -20,6 +20,10 @@ export type SeedUser = { email: string; name: string; password: string; role: 'm
 export type UserRow = { id: string; email: string; name: string; role: 'member' | 'reviewer'; password_hash: string };
 export type SubmissionRow = { id: string; owner_id: string; title: string; year: number; body: string; author: string; consent: number; status: string; created_at: string; updated_at: string; review_note: string };
 
+export class StoreError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
 export class Store {
   readonly db: DatabaseSync;
   constructor(path: string) {
@@ -128,6 +132,80 @@ export class Store {
     }
     const result = await pgPool.query('SELECT * FROM submissions WHERE id=$1', [id]);
     return result.rows[0] as SubmissionRow | undefined;
+  }
+
+  async reviewSubmission(id: string, action: 'approve' | 'reject' | 'withdraw', note: string, userId: string): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      try {
+        this.db.exec('BEGIN IMMEDIATE');
+        const item = this.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow | undefined;
+        if (!item || (action === 'withdraw' && item.owner_id !== userId)) throw new StoreError(404, '记录不存在。');
+        if (action === 'withdraw' ? item.status === 'withdrawn' : item.status !== 'pending') throw new StoreError(409, '记录状态已改变，请刷新。');
+        const status = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'withdrawn';
+        const now = new Date().toISOString();
+        const changed = this.db.prepare('UPDATE submissions SET status=?,review_note=?,updated_at=? WHERE id=? AND status=?').run(status, action === 'withdraw' ? item.review_note : note, now, item.id, item.status);
+        if (!changed.changes) throw new StoreError(409, '记录状态已改变，请刷新。');
+        this.db.prepare('INSERT INTO review_logs VALUES (?,?,?,?,?,?)').run(randomUUID(), item.id, userId, action, action === 'withdraw' ? '' : note, now);
+        this.db.exec('COMMIT');
+        return;
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
+    }
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemResult = await client.query('SELECT * FROM submissions WHERE id=$1', [id]);
+      const item = itemResult.rows[0] as SubmissionRow | undefined;
+      if (!item || (action === 'withdraw' && item.owner_id !== userId)) throw new StoreError(404, '记录不存在。');
+      if (action === 'withdraw' ? item.status === 'withdrawn' : item.status !== 'pending') throw new StoreError(409, '记录状态已改变，请刷新。');
+      const status = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'withdrawn';
+      const now = new Date().toISOString();
+      const changed = await client.query('UPDATE submissions SET status=$1,review_note=$2,updated_at=$3 WHERE id=$4 AND status=$5', [status, action === 'withdraw' ? item.review_note : note, now, item.id, item.status]);
+      if (!changed.rowCount) throw new StoreError(409, '记录状态已改变，请刷新。');
+      await client.query('INSERT INTO review_logs (id, submission_id, actor_id, action, note, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), item.id, userId, action, action === 'withdraw' ? '' : note, now]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteSubmission(id: string, userId: string): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      try {
+        this.db.exec('BEGIN IMMEDIATE');
+        const item = this.db.prepare('SELECT * FROM submissions WHERE id=? AND owner_id=?').get(id, userId) as SubmissionRow | undefined;
+        if (!item) throw new StoreError(404, '记录不存在。');
+        this.db.prepare('UPDATE review_logs SET submission_id=NULL,actor_id=NULL,note=? WHERE submission_id=?').run('', item.id);
+        this.db.prepare('INSERT INTO review_logs VALUES (?,NULL,NULL,?,?,?)').run(randomUUID(), 'delete', '', new Date().toISOString());
+        this.db.prepare('DELETE FROM submissions WHERE id=? AND owner_id=?').run(item.id, userId);
+        this.db.exec('COMMIT');
+        return;
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
+    }
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemResult = await client.query('SELECT * FROM submissions WHERE id=$1 AND owner_id=$2', [id, userId]);
+      const item = itemResult.rows[0] as SubmissionRow | undefined;
+      if (!item) throw new StoreError(404, '记录不存在。');
+      await client.query('UPDATE review_logs SET submission_id=NULL,actor_id=NULL,note=$1 WHERE submission_id=$2', ['', item.id]);
+      await client.query('INSERT INTO review_logs (id, submission_id, actor_id, action, note, created_at) VALUES ($1,NULL,NULL,$2,$3,$4)', [randomUUID(), 'delete', '', new Date().toISOString()]);
+      await client.query('DELETE FROM submissions WHERE id=$1 AND owner_id=$2', [item.id, userId]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async findUserByEmail(email: string): Promise<UserRow | undefined> {
