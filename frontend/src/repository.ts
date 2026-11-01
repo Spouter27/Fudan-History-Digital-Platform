@@ -50,7 +50,8 @@ export class LocalRepository implements PlatformRepository {
 
 export class HttpRepository implements PlatformRepository {
   constructor(private base: string) {}
-  private async request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
+  // protected 供只读目录适配器复用。统一校验响应外壳与业务数据，禁止请求失败后悄悄展示 demo。
+  protected async request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(`${this.base.replace(/\/$/, '')}${path}`, {
@@ -79,8 +80,9 @@ export class HttpRepository implements PlatformRepository {
   async remove(id: string) { await this.request(`/submissions/${encodeURIComponent(id)}`, z.null(), { method: 'DELETE' }); }
 }
 
+// VITE_ 配置会进入浏览器构建产物，只能存数据模式和公开 API 地址，不能放服务端密钥。
 export const isDemo = import.meta.env?.VITE_DATA_MODE !== 'api';
-// Access storage only when the user opens/submits a memory; blocked storage must not break browsing.
+// 延迟访问 localStorage，让浏览器禁用存储时仍能正常浏览资料；读写失败在投稿操作时提示。
 const storage: Pick<Storage, 'getItem' | 'setItem'> = {
   getItem: key => window.localStorage.getItem(key),
   setItem: (key, value) => window.localStorage.setItem(key, value),

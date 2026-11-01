@@ -7,6 +7,7 @@ export function Empty({ children }: { children: ReactNode }) { return <div class
 export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
+    // 原生 dialog 管理模态焦点；关闭后恢复原焦点与页面滚动状态，支持键盘连续浏览。
     const dialog = ref.current!; const previous = document.activeElement as HTMLElement | null;
     dialog.showModal(); const old = document.body.style.overflow; document.body.style.overflow = 'hidden';
     return () => { dialog.close(); document.body.style.overflow = old; previous?.focus(); };
@@ -16,6 +17,7 @@ export function Modal({ title, children, onClose }: { title: string; children: R
   </dialog>;
 }
 export function SourceCard({ source }: { source: Source }) {
+  // 原文链接仅允许 HTTP(S)，防止资料中的其他 URL 协议进入可点击入口。
   const url = source.url && /^https?:\/\//i.test(source.url) ? source.url : undefined;
   return <article className="source-card"><div className="row"><span className="tag">{source.kind}</span>{source.demo && <DemoTag />}</div><h4>{source.title}</h4><p className="small muted">{source.citation}</p><blockquote>{source.excerpt}</blockquote><div className="row small"><span>{source.authorization}</span>{url && <a href={url} target="_blank" rel="noopener noreferrer">查看原始来源 <ArrowUpRight size={14} /></a>}</div></article>;
 }

@@ -26,6 +26,8 @@ export const catalogSchema = z.object({
   events: z.array(eventSchema), people: z.array(personSchema),
   relations: z.array(relationSchema), sources: z.array(sourceSchema),
 });
+// 与后端共用同一业务约束的前端副本；修改字段/枚举时需同步 backend/src/model.ts。
+// 这里只提供即时表单反馈，后端仍独立验证输入，不能依赖浏览器校验保护数据。
 export const submissionInputSchema = z.object({
   title: z.string().trim().min(4, '标题至少4个字').max(60, '标题最多60个字'),
   year: z.number().int().min(1905).max(new Date().getFullYear()),
@@ -48,6 +50,7 @@ export type SubmissionInput = z.infer<typeof submissionInputSchema>;
 export type ReviewAction = 'approve' | 'reject' | 'withdraw';
 
 export function transitionSubmission(item: Submission, action: ReviewAction, note = ''): Submission {
+  // demo 模式的状态流转；API 模式由服务端执行事务和权限检查。
   if (action === 'withdraw' && item.status === 'withdrawn') throw new Error('这条记忆已经撤回。');
   if (action !== 'withdraw' && item.status !== 'pending') throw new Error('只能审核待审核的记忆，请刷新列表。');
   if (action === 'reject' && !note.trim()) throw new Error('请填写退回原因，帮助投稿者了解问题。');

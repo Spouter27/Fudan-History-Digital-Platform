@@ -42,6 +42,7 @@ export function SessionBar(){
   return <div className="session-bar"><span>本地后端已接入 · 资料仍为虚构演示</span><div className="row">{session.loading?<span>读取登录状态…</span>:session.user?<><span>{session.user.name} · {session.user.role==='reviewer'?'审核员':'成员'}</span><button className="text-button" onClick={async()=>{try{await session.logout();navigate('/');}catch(e){setError(e instanceof Error?e.message:'退出失败');}}}>退出登录</button></>:<Link to="/login">登录开发账号 →</Link>}{error&&<span role="alert" className="danger">{error}</span>}</div></div>;
 }
 export function AuthGate({children,reviewer=false}:{children:ReactNode;reviewer?:boolean}){
+  // 此处只控制页面入口；实际身份、所有权及审核权限仍必须由后端逐请求验证。
   const session=useSession();
   if(isDemo) return <>{children}</>;
   if(session.loading) return <Empty>正在检查登录状态…</Empty>;

@@ -2,7 +2,13 @@
 
 # 后端接口约定
 
-此文档描述已经实现的 HttpRepository 所期待的协议。它是待实现的接口，不表示服务已经存在。类型和校验以 src/model.ts 为准。
+2026-11-01：B组前端已按[C组接口契约 v1.1](../../docs/C组接口契约.md)完成本地接入。字段与分页规则以该契约为准，[接入验证记录](C组接口接入验证.md)说明页面映射及验证范围。
+
+新增只读入口：`GET /timeline`、`GET /timeline/:id`、`GET /persons`、`GET /persons/:id`、`GET /relations/graph`、`GET /search`。统一由 `src/catalogRepository.ts` 校验和调用，时间轴、人物、搜索均使用服务端分页；`/catalog`继续提供来源目录、统计及图谱布局/人物名称等兼容元数据。
+
+分页响应为 `{total,page,pageSize,items}`。搜索使用后端 `jumpType/jumpId` 跳转，`timeline` 映射为前端事件详情；`highlight` 仅将无属性的成对 `<em>` 转为 React `<mark>`，其余内容转义为文本。图谱 `nodes/links` 在前端映射为原SVG视图模型，中心子图按 `centerId/depth` 查询。
+
+以下保留基础目录与共创接口说明。基础字段校验见 `src/model.ts`，C组扩展响应校验见 `src/catalogRepository.ts`。
 
 ## 通用协议
 

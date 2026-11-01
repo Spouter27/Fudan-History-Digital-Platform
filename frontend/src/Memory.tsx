@@ -12,6 +12,7 @@ export default function Memory({ review = false }: { review?: boolean }) {
   const [title, setTitle] = useState(''); const [year, setYear] = useState('2026'); const [body, setBody] = useState(''); const [author, setAuthor] = useState(''); const [consent, setConsent] = useState(false);
   const [decision, setDecision] = useState<{ item: Submission; action: ReviewAction | 'delete' } | null>(null); const [note, setNote] = useState('');
   useEffect(() => { let live = true; setLoading(true); setError('');
+    // 我的投稿、公开记忆及审核队列由后端按 scope 返回，避免前端混合后再做权限过滤。
     repository.submissions(review ? 'review' : tab === 'public' ? 'public' : 'mine').then(result => { if (live) setItems(result); }).catch(e => { if (live) setError(e instanceof Error ? e.message : '读取失败'); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [review, tab, refresh]);
@@ -35,6 +36,7 @@ export default function Memory({ review = false }: { review?: boolean }) {
     finally { setBusy(false); }
   }
   function exportItems() {
+    // 导出当前已加载的记录，下载后回收临时 URL，避免长时间占用浏览器内存。
     const url = URL.createObjectURL(new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' }));
     const a = document.createElement('a'); a.href = url; a.download = '我的校史记忆.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
