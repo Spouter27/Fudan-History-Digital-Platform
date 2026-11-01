@@ -198,7 +198,7 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
   app.post('/api/auth/login', async (req, res) => {
     limit(loginAttempts, req.ip || 'local', options.loginLimit ?? 10);
     const input=loginSchema.parse(req.body);
-    const user=store.db.prepare('SELECT * FROM users WHERE email=?').get(input.email) as UserRow | undefined;
+    const user=await store.findUserByEmail(input.email);
     const valid=verifyPassword(input.password,user?.password_hash || dummyHash);
     if (!user || !valid) throw new HttpError(401,'账号或密码不正确。');
     const oldToken=sessionCookie(req);

@@ -90,6 +90,14 @@ export class Store {
     result.relations = result.relations.filter(r => allowed(r) && peopleIds.has(r.from) && peopleIds.has(r.to));
     return result;
   }
+  async findUserByEmail(email: string): Promise<UserRow | undefined> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT * FROM users WHERE email=?').get(email) as UserRow | undefined;
+    }
+    const result = await pgPool.query('SELECT * FROM users WHERE email=$1', [email]);
+    return result.rows[0] as UserRow | undefined;
+  }
+
   async session(token?: string): Promise<UserRow | undefined> {
     if (!token) return undefined;
     const tokenHash = hashToken(token);
