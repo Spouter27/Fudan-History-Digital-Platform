@@ -20,7 +20,7 @@ const seed=[
 ];
 const input={title:'服务器投稿测试',year:2026,body:'这是一段仅供自动化测试的虚构校史投稿，用于验证审核和所有权隔离。',author:'测试笔名',consent:true};
 async function fixtureServer(path=':memory:',loginLimit=30){
- const store=new Store(path);store.seed(fixture,seed);
+ const store=new Store(path);await store.seed(fixture,seed);
  const server=createApp(store,{origins:[origin],loginLimit}).listen(0,'127.0.0.1');await once(server,'listening');
  const base='http://127.0.0.1:'+(server.address() as AddressInfo).port;
  async function req(path:string,method='GET',body?:unknown,cookie='',headers:Record<string,string>={}){

@@ -46,9 +46,40 @@ export class Store {
     try { const value = fn(); this.db.exec('COMMIT'); return value; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  seed(catalog: Catalog, users: SeedUser[]) {
+  async countUsers(): Promise<number> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return (this.db.prepare('SELECT COUNT(*) AS n FROM users').get()!.n as number);
+    }
+    const result = await pgPool.query('SELECT COUNT(*) AS n FROM users');
+    return Number(result.rows[0].n);
+  }
+
+  async seed(catalog: Catalog, users: SeedUser[]): Promise<void> {
+    if (process.env.DB_DRIVER !== 'sqlite') {
+      const client = await pgPool.connect();
+      try {
+        await client.query('BEGIN');
+        const countResult = await client.query('SELECT COUNT(*) AS n FROM catalog_items');
+        if (Number(countResult.rows[0].n) === 0) {
+          for (const kind of ['events', 'people', 'relations', 'sources'] as const)
+            for (const item of catalog[kind])
+              await client.query('INSERT INTO catalog_items (kind, id, payload, published) VALUES ($1,$2,$3,1)', [kind, item.id, JSON.stringify(item)]);
+        }
+        for (const user of users) {
+          const exist = await client.query('SELECT id FROM users WHERE email=$1', [user.email.toLowerCase()]);
+          if (!exist.rows.length)
+            await client.query('INSERT INTO users (id, email, name, role, password_hash) VALUES ($1,$2,$3,$4,$5)', [randomUUID(), user.email.toLowerCase(), user.name, user.role, hashPassword(user.password)]);
+        }
+        await client.query('COMMIT');
+        return;
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
     this.transaction(() => {
-      // Seed only an entirely empty catalog. Restarting never republishes withdrawn/hidden records.
       if (!(this.db.prepare('SELECT COUNT(*) AS n FROM catalog_items').get()!.n as number)) {
         for (const kind of ['events', 'people', 'relations', 'sources'] as const)
           for (const item of catalog[kind]) this.db.prepare('INSERT INTO catalog_items VALUES (?,?,?,1)').run(kind, item.id, JSON.stringify(item));

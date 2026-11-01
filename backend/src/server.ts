@@ -12,7 +12,7 @@ if(existsSync(env)) process.loadEnvFile(env);
 if(process.env.NODE_ENV==='production') throw new Error('此版为本地开发后端。请完成正式身份验证、HTTPS、密钥管理及部署评审后再用于生产。');
 const dbPath=resolve(root,process.env.DB_PATH || 'data/platform.sqlite');
 const store=new Store(dbPath);
-const firstRun=!(store.db.prepare('SELECT COUNT(*) AS n FROM users').get()!.n as number);
+const firstRun=(await store.countUsers())===0;
 const accounts:SeedUser[]=firstRun?[
   {email:'student-a@local.test',name:'演示学生A',role:'member',password:randomBytes(15).toString('base64url')},
   {email:'student-b@local.test',name:'演示学生B',role:'member',password:randomBytes(15).toString('base64url')},
@@ -20,7 +20,7 @@ const accounts:SeedUser[]=firstRun?[
 ]:[];
 const credentialsPath=resolve(dirname(dbPath),'dev-accounts.txt');
 if(firstRun) writeFileSync(credentialsPath,accounts.map(a=>a.name+'\n邮箱: '+a.email+'\n密码: '+a.password+'\n').join('\n'),{encoding:'utf8',flag:'wx',mode:0o600});
-store.seed(catalogSchema.parse(JSON.parse(readFileSync(resolve(root,'fixtures/catalog.json'),'utf8'))),accounts);
+await store.seed(catalogSchema.parse(JSON.parse(readFileSync(resolve(root,'fixtures/catalog.json'),'utf8'))),accounts);
 const origins=(process.env.ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173').split(',').map(x=>x.trim());
 const port=Number(process.env.PORT || 3000);
 if(!Number.isInteger(port)||port<1||port>65535) throw new Error('PORT无效');
