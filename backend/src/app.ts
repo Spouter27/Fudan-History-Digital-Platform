@@ -12,8 +12,8 @@ function ok(res: Response, data: unknown) { res.json({ code: 0, message: 'ok', d
 function sessionCookie(req: Request) {
   return req.headers.cookie?.split(';').map(p => p.trim()).find(p => p.startsWith(cookieName + '='))?.slice(cookieName.length + 1);
 }
-function who(req: Request, store: Store) {
-  const user = store.session(sessionCookie(req));
+async function who(req: Request, store: Store) {
+  const user = await store.session(sessionCookie(req));
   if (!user) throw new HttpError(401, '请先登录。');
   return user;
 }
@@ -202,16 +202,16 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     const valid=verifyPassword(input.password,user?.password_hash || dummyHash);
     if (!user || !valid) throw new HttpError(401,'账号或密码不正确。');
     const oldToken=sessionCookie(req);
-    if (oldToken) store.db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(oldToken));
-    store.db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(Date.now());
+    if (oldToken) await store.deleteSession(hashToken(oldToken));
+    await store.deleteExpiredSessions(Date.now());
     const token=randomBytes(32).toString('base64url');
-    store.db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(hashToken(token),user.id,Date.now()+8*60*60*1000);
+    await store.createSession(hashToken(token), user.id, Date.now()+8*60*60*1000);
     res.cookie(cookieName,token,{httpOnly:true,sameSite:'strict',secure:false,path:'/api',maxAge:8*60*60*1000});
     ok(res,publicUser(user));
   });
-  app.get('/api/auth/me',async (req, res) => ok(res,publicUser(who(req,store))));
+  app.get('/api/auth/me',async (req, res) => ok(res,publicUser(await who(req, store))));
   app.post('/api/auth/logout',async (req, res) => {
-    const token=sessionCookie(req); if (token) store.db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));
+    const token=sessionCookie(req); if (token) await store.deleteSession(hashToken(token));
     res.clearCookie(cookieName,{httpOnly:true,sameSite:'strict',secure:false,path:'/api'});
     ok(res,null);
   });
@@ -221,19 +221,19 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
       const rows=store.db.prepare('SELECT * FROM submissions WHERE status=? ORDER BY created_at DESC,id DESC').all('approved') as SubmissionRow[];
       ok(res,rows.map(row=>serializeSubmission(row,true))); return;
     }
-    const user=who(req,store);
+    const user=await who(req, store);
     if(scope==='review' && user.role!=='reviewer') throw new HttpError(403,'只有审核员可以访问审核队列。');
     const rows=(scope==='mine' ? store.db.prepare('SELECT * FROM submissions WHERE owner_id=? ORDER BY created_at DESC,id DESC').all(user.id) : store.db.prepare('SELECT * FROM submissions ORDER BY created_at DESC,id DESC').all()) as SubmissionRow[];
     ok(res,rows.map(row=>serializeSubmission(row)));
   });
   app.post('/api/submissions',async (req, res) => {
-    const user=who(req,store); const input=submissionInputSchema.parse(req.body);
+    const user=await who(req, store); const input=submissionInputSchema.parse(req.body);
     const id=randomUUID(), now=new Date().toISOString();
     store.db.prepare('INSERT INTO submissions VALUES (?,?,?,?,?,?,1,?,?,?,?)').run(id,user.id,input.title,input.year,input.body,input.author,'pending',now,now,'');
     ok(res,serializeSubmission(store.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow));
   });
   app.post('/api/submissions/:id/:action',async (req, res) => {
-    const user=who(req,store);
+    const user=await who(req, store);
     const action=z.enum(['approve','reject','withdraw']).parse(req.params.action);
     const {note}=z.object({note:z.string().trim().max(500).default('')}).parse(req.body);
     if(action!=='withdraw' && user.role!=='reviewer') throw new HttpError(403,'只有审核员可以审核投稿。');
@@ -248,8 +248,8 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
       store.db.prepare('INSERT INTO review_logs VALUES (?,?,?,?,?,?)').run(randomUUID(),item.id,user.id,action,action==='withdraw'?'':note,now);
     }); ok(res,null);
   });
-  app.delete('/api/submissions/:id',(req,res)=>{
-    const user=who(req,store);
+  app.delete('/api/submissions/:id', async (req,res)=>{
+    const user=await who(req, store);
     store.transaction(()=>{
       const item=store.db.prepare('SELECT * FROM submissions WHERE id=? AND owner_id=?').get(String(req.params.id),user.id) as SubmissionRow | undefined;
       if(!item) throw new HttpError(404,'记录不存在。');

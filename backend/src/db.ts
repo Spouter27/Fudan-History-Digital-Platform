@@ -90,9 +90,38 @@ export class Store {
     result.relations = result.relations.filter(r => allowed(r) && peopleIds.has(r.from) && peopleIds.has(r.to));
     return result;
   }
-  session(token?: string) {
+  async session(token?: string): Promise<UserRow | undefined> {
     if (!token) return undefined;
-    return this.db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').get(hashToken(token), Date.now()) as UserRow | undefined;
+    const tokenHash = hashToken(token);
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?').get(tokenHash, Date.now()) as UserRow | undefined;
+    }
+    const result = await pgPool.query('SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>$2', [tokenHash, Date.now()]);
+    return result.rows[0] as UserRow | undefined;
+  }
+
+  async createSession(tokenHash: string, userId: string, expiresAt: number): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      this.db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(tokenHash, userId, expiresAt);
+      return;
+    }
+    await pgPool.query('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1,$2,$3)', [tokenHash, userId, expiresAt]);
+  }
+
+  async deleteSession(tokenHash: string): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      this.db.prepare('DELETE FROM sessions WHERE token_hash=?').run(tokenHash);
+      return;
+    }
+    await pgPool.query('DELETE FROM sessions WHERE token_hash=$1', [tokenHash]);
+  }
+
+  async deleteExpiredSessions(now: number): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      this.db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(now);
+      return;
+    }
+    await pgPool.query('DELETE FROM sessions WHERE expires_at<=$1', [now]);
   }
   close() { this.db.close(); }
 }
