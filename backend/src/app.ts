@@ -229,7 +229,7 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
   app.post('/api/submissions',async (req, res) => {
     const user=await who(req, store); const input=submissionInputSchema.parse(req.body);
     const id=randomUUID(), now=new Date().toISOString();
-    store.db.prepare('INSERT INTO submissions VALUES (?,?,?,?,?,?,1,?,?,?,?)').run(id,user.id,input.title,input.year,input.body,input.author,'pending',now,now,'');
+    await store.createSubmission(id, user.id, input.title, input.year, input.body, input.author, now);
     ok(res,serializeSubmission((await store.findSubmissionById(id))!));
   });
   app.post('/api/submissions/:id/:action',async (req, res) => {

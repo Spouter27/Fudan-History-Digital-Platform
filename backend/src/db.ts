@@ -114,6 +114,14 @@ export class Store {
     return result.rows as SubmissionRow[];
   }
 
+  async createSubmission(id: string, ownerId: string, title: string, year: number, body: string, author: string, now: string): Promise<void> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      this.db.prepare('INSERT INTO submissions VALUES (?,?,?,?,?,?,1,?,?,?,?)').run(id, ownerId, title, year, body, author, 'pending', now, now, '');
+      return;
+    }
+    await pgPool.query('INSERT INTO submissions (id, owner_id, title, year, body, author, consent, status, created_at, updated_at, review_note) VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,$9,$10)', [id, ownerId, title, year, body, author, 'pending', now, now, '']);
+  }
+
   async findSubmissionById(id: string): Promise<SubmissionRow | undefined> {
     if (process.env.DB_DRIVER === 'sqlite') {
       return this.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow | undefined;
