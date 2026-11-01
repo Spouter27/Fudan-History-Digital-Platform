@@ -90,6 +90,38 @@ export class Store {
     result.relations = result.relations.filter(r => allowed(r) && peopleIds.has(r.from) && peopleIds.has(r.to));
     return result;
   }
+  async listPublicSubmissions(): Promise<SubmissionRow[]> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT * FROM submissions WHERE status=? ORDER BY created_at DESC,id DESC').all('approved') as SubmissionRow[];
+    }
+    const result = await pgPool.query('SELECT * FROM submissions WHERE status=$1 ORDER BY created_at DESC,id DESC', ['approved']);
+    return result.rows as SubmissionRow[];
+  }
+
+  async listSubmissionsByOwner(ownerId: string): Promise<SubmissionRow[]> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT * FROM submissions WHERE owner_id=? ORDER BY created_at DESC,id DESC').all(ownerId) as SubmissionRow[];
+    }
+    const result = await pgPool.query('SELECT * FROM submissions WHERE owner_id=$1 ORDER BY created_at DESC,id DESC', [ownerId]);
+    return result.rows as SubmissionRow[];
+  }
+
+  async listAllSubmissions(): Promise<SubmissionRow[]> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT * FROM submissions ORDER BY created_at DESC,id DESC').all() as SubmissionRow[];
+    }
+    const result = await pgPool.query('SELECT * FROM submissions ORDER BY created_at DESC,id DESC');
+    return result.rows as SubmissionRow[];
+  }
+
+  async findSubmissionById(id: string): Promise<SubmissionRow | undefined> {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      return this.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow | undefined;
+    }
+    const result = await pgPool.query('SELECT * FROM submissions WHERE id=$1', [id]);
+    return result.rows[0] as SubmissionRow | undefined;
+  }
+
   async findUserByEmail(email: string): Promise<UserRow | undefined> {
     if (process.env.DB_DRIVER === 'sqlite') {
       return this.db.prepare('SELECT * FROM users WHERE email=?').get(email) as UserRow | undefined;

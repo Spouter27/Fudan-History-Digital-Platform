@@ -218,19 +218,19 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
   app.get('/api/submissions',async (req, res) => {
     const scope=z.enum(['mine','review','public']).parse(req.query.scope || 'mine');
     if (scope==='public') {
-      const rows=store.db.prepare('SELECT * FROM submissions WHERE status=? ORDER BY created_at DESC,id DESC').all('approved') as SubmissionRow[];
+      const rows=await store.listPublicSubmissions();
       ok(res,rows.map(row=>serializeSubmission(row,true))); return;
     }
     const user=await who(req, store);
     if(scope==='review' && user.role!=='reviewer') throw new HttpError(403,'只有审核员可以访问审核队列。');
-    const rows=(scope==='mine' ? store.db.prepare('SELECT * FROM submissions WHERE owner_id=? ORDER BY created_at DESC,id DESC').all(user.id) : store.db.prepare('SELECT * FROM submissions ORDER BY created_at DESC,id DESC').all()) as SubmissionRow[];
+    const rows=scope==='mine' ? await store.listSubmissionsByOwner(user.id) : await store.listAllSubmissions();
     ok(res,rows.map(row=>serializeSubmission(row)));
   });
   app.post('/api/submissions',async (req, res) => {
     const user=await who(req, store); const input=submissionInputSchema.parse(req.body);
     const id=randomUUID(), now=new Date().toISOString();
     store.db.prepare('INSERT INTO submissions VALUES (?,?,?,?,?,?,1,?,?,?,?)').run(id,user.id,input.title,input.year,input.body,input.author,'pending',now,now,'');
-    ok(res,serializeSubmission(store.db.prepare('SELECT * FROM submissions WHERE id=?').get(id) as SubmissionRow));
+    ok(res,serializeSubmission((await store.findSubmissionById(id))!));
   });
   app.post('/api/submissions/:id/:action',async (req, res) => {
     const user=await who(req, store);
