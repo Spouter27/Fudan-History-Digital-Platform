@@ -292,7 +292,7 @@ export function serializeSubmission(row: SubmissionRow, isPublic = false) {
 import pg from 'pg';
 
 export const pgPool = new pg.Pool({
-  database: 'fudan_history',
+  database: process.env.PGDATABASE || 'fudan_history',
   user: 'postgres',
   password: process.env.PGPASSWORD,
   host: '127.0.0.1',

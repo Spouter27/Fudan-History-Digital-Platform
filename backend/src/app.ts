@@ -195,6 +195,32 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
     ok(res, { total, page, pageSize, items: pageItems });
   });
 
+  // ================= D组 AI 服务网关 =================
+  app.get('/api/ai-health', async (_req, res) => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/health');
+      const data = await response.json();
+      res.status(response.status).json({ code: 0, message: 'ok', data });
+    } catch (error) {
+      res.status(503).json({ code: 503, message: 'AI 服务暂不可用', data: null });
+    }
+  });
+
+  app.post('/api/qa/ask', async (req, res) => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/qa/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+      });
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error) {
+      res.status(503).json({ code: 503, message: 'AI 服务暂不可用', data: null });
+    }
+  });
+  // ====================================================
+
   app.post('/api/auth/login', async (req, res) => {
     limit(loginAttempts, req.ip || 'local', options.loginLimit ?? 10);
     const input=loginSchema.parse(req.body);
