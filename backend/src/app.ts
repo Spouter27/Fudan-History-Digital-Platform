@@ -1,3 +1,4 @@
+import { pgPool } from './db.ts';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import helmet from 'helmet';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -193,6 +194,35 @@ export function createApp(store: Store, options: { origins: string[]; loginLimit
       };
     });
     ok(res, { total, page, pageSize, items: pageItems });
+  });
+
+
+  app.get('/api/stats', async (_req, res) => {
+    if (process.env.DB_DRIVER === 'sqlite') {
+      const events = (store.db.prepare("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='events' AND published=1").get() as any).n;
+      const people = (store.db.prepare("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='people' AND published=1").get() as any).n;
+      const relations = (store.db.prepare("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='relations' AND published=1").get() as any).n;
+      const sources = (store.db.prepare("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='sources' AND published=1").get() as any).n;
+      return ok(res, { events, people, relations, sources });
+    }
+    const { rows } = await pgPool.query("SELECT kind, COUNT(*) AS n FROM catalog_items WHERE published=1 GROUP BY kind");
+    const stats = { events: 0, people: 0, relations: 0, sources: 0 };
+    for (const r of rows) { if (r.kind in stats) stats[r.kind as keyof typeof stats] = Number(r.n); }
+    ok(res, stats);
+  });
+
+  app.get('/api/sources', async (req, res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '20'), 10) || 20));
+    if (process.env.DB_DRIVER === 'sqlite') {
+      const rows = store.db.prepare("SELECT id, payload FROM catalog_items WHERE kind='sources' AND published=1 LIMIT ? OFFSET ?").all(pageSize, (page - 1) * pageSize);
+      const total = (store.db.prepare("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='sources' AND published=1").get() as any).n;
+      return ok(res, { total, page, pageSize, items: rows.map((r: any) => JSON.parse(r.payload)) });
+    }
+    const countResult = await pgPool.query("SELECT COUNT(*) AS n FROM catalog_items WHERE kind='sources' AND published=1");
+    const total = Number(countResult.rows[0].n);
+    const result = await pgPool.query("SELECT payload FROM catalog_items WHERE kind='sources' AND published=1 ORDER BY id LIMIT $1 OFFSET $2", [pageSize, (page - 1) * pageSize]);
+    ok(res, { total, page, pageSize, items: result.rows.map(r => JSON.parse(r.payload)) });
   });
 
   // ================= D组 AI 服务网关 =================

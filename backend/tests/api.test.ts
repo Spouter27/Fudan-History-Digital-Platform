@@ -202,3 +202,21 @@ test('C组关系图中心子图与搜索摘要高亮', async () => {
     assert.ok(hits.length > 0, '至少一条结果的 highlight 应包含 <em>校园</em>');
   } finally { await f.close(); }
 });
+test('C组统计与来源接口', async () => {
+  const f = await fixtureServer();
+  try {
+    const stats = await f.req('/stats');
+    assert.equal(stats.status, 200);
+    assert.equal(stats.data.data.events, 12);
+    assert.equal(stats.data.data.people, 8);
+    assert.equal(stats.data.data.relations, 11);
+    assert.equal(stats.data.data.sources, 3);
+
+    const sources = await f.req('/sources?page=1&pageSize=2');
+    assert.equal(sources.status, 200);
+    assert.equal(sources.data.data.total, 3);
+    assert.equal(sources.data.data.items.length, 2);
+  } finally {
+    await f.close();
+  }
+});
