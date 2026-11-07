@@ -24,7 +24,7 @@ await store.seed(catalogSchema.parse(JSON.parse(readFileSync(resolve(root,'fixtu
 const origins=(process.env.ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:4173,http://localhost:4173').split(',').map(x=>x.trim());
 const port=Number(process.env.PORT || 3000);
 if(!Number.isInteger(port)||port<1||port>65535) throw new Error('PORT无效');
-const server=createApp(store,{origins}).listen(port,'127.0.0.1',()=>{
+const server=createApp(store,{origins}).listen(port, process.env.HOST || '0.0.0.0',()=>{
   console.log('Backend: http://127.0.0.1:'+port+'/api/health');
   console.log('SQLite: '+dbPath);
   console.log('本地测试账号（勿提交到Git）: '+credentialsPath);
