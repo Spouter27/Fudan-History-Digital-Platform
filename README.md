@@ -70,3 +70,26 @@ share 使用 Windows PowerShell 将源码打包到 release/，输出 SHA256。�
 ## 档案侦探局
 
 导航栏新增“档案侦探局”（`/#/detectives`）：包含三个虚构史料判断任务、答题反馈、关联资料入口，以及读取 `frontend/public/detective-responses/` 中预设文本的“档案助手线索”。它不调用外部 AI，适合本地演示互动流程；所有任务和线索均不得当作真实校史资料使用。
+
+## C组只读展示 API
+
+以下接口均为只读，游客可访问，不需要登录。统一响应 `{"code":0,"message":"ok","data":...}`。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/timeline` | 时间轴列表，支持 page/pageSize/start/end/category/keyword |
+| `GET /api/timeline/:id` | 单事件详情，不存在返回 404 |
+| `GET /api/persons` | 人物列表，支持 page/pageSize/role/keyword |
+| `GET /api/persons/:id` | 人物详情，含 relatedEvents 和 relations |
+| `GET /api/relations/graph` | D3 关系图 JSON，返回 nodes/links |
+| `GET /api/search` | 搜索，支持 q/page/pageSize/type，返回 highlight/jumpType/jumpId |
+
+完整字段、参数和错误码见 `docs/C组接口契约.md`。
+
+本地启动后可直接测试：
+
+~~~powershell
+Invoke-RestMethod "http://127.0.0.1:3000/api/timeline?page=1&pageSize=5"
+Invoke-RestMethod "http://127.0.0.1:3000/api/persons/p1"
+Invoke-RestMethod "http://127.0.0.1:3000/api/relations/graph"
+~~~
